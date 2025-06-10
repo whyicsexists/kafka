@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ldc-kafka-scripts
+  namespace: bigdata
+data:
+  setup.sh: |-  #启动脚本
+    #!/bin/bash
+    export KAFKA_CFG_NODE_ID=${MY_POD_NAME##*-} 
+    exec /opt/bitnami/scripts/kafka/entrypoint.sh /opt/bitnami/scripts/kafka/run.sh

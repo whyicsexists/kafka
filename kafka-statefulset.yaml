@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: bigdata
+  labels:
+    app: kafka
+spec:
+  selector:
+    matchLabels:
+      app: kafka
+  serviceName: kafka-headless
+  podManagementPolicy: Parallel
+  replicas: 2  #根据资源情况设置实例数，推荐3个副本
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      affinity:
+        nodeAffinity:  #这里做了节点亲和性调度到master节点
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - master01
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: kafka
+        image: bitnami/kafka:3.4.0
+        imagePullPolicy: "IfNotPresent"
+        command:
+        - /opt/leaderchain/setup.sh
+        env:
+        - name: BITNAMI_DEBUG
+          value: "true" #详细日志
+        # KRaft settings 
+        - name: MY_POD_NAME # 用于生成KAFKA_CFG_NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name            
+        - name: KAFKA_CFG_PROCESS_ROLES
+          value: "controller,broker"
+        - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+          value: "0@kafka-0.kafka-headless:9093,1@kafka-1.kafka-headless:9093"  #修改实例数时要更新
+        - name: KAFKA_KRAFT_CLUSTER_ID
+          value: "aqtXDHPF3WIlpdQSiAp5eI"  
+        # Listeners            
+        - name: KAFKA_CFG_LISTENERS
+          value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+        - name: KAFKA_CFG_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://:9092"
+        - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+        - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+          value: "CONTROLLER"
+        - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: ALLOW_PLAINTEXT_LISTENER
+          value: "yes"
+        ports:
+        - containerPort: 9092
+          name: broker
+        - containerPort: 9093
+          name: controller
+          protocol: TCP                     
+        volumeMounts:
+        - mountPath: /bitnami/kafka
+          name: kafka-data
+        - mountPath: /opt/leaderchain/setup.sh
+          name: scripts
+          subPath: setup.sh
+          readOnly: true      
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+      volumes:    
+      - configMap:
+          defaultMode: 493
+          name: ldc-kafka-scripts  #ConfigMap的名字
+        name: scripts                   
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: kafka-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ] 
+      storageClassName: nfs-client  #存储类的名称
+      resources:
+        requests:
+          storage: 1Gi
+
